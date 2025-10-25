@@ -16,7 +16,6 @@ const { rollback } = require('./services/transacoesService')
 const partesCadastroService = require('./services/partesCadastroService')
 
 const app = express()
-//const PORT = process.env.PORT || 3001
 const PORT = process.env.PORT || 3001
 
 // Ajusta CORS para permitir o frontend em 9000 e 9002
@@ -28,6 +27,7 @@ app.use(
 )
 app.use(bodyParser.json({ limit: '10mb' }))
 app.use(bodyParser.urlencoded({ limit: '10mb', extended: true }))
+app.use(express.static(path.join(__dirname, 'public')))
 
 initDb()
   .then(() => console.log('Banco de dados inicializado'))
@@ -1074,7 +1074,7 @@ app.post('/api/processos/:id/externo/documentos/:tempId/rejeitar', async (req, r
 app.get('/health', (_, res) => res.json({ status: 'ok' }))
 
 app.listen(PORT, () => {
-  console.log(`SPE API mock rodando em http://localhost:${PORT}`)
+  console.log(`SPE API rodando em http://localhost:${PORT}`)
 })
 
 // Fallback de favicon caso o arquivo não exista
@@ -1320,7 +1320,3 @@ app.post('/api/processos/:id/externo/documentos/:tempId/rejeitar', async (req, r
 
 // Saúde
 app.get('/health', (_, res) => res.json({ status: 'ok' }))
-
-app.listen(PORT, () => {
-  console.log(`SPE API mock rodando em http://localhost:${PORT}`)
-})
