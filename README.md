@@ -1,6 +1,6 @@
-# SPE API (Mock)
+# SPE API
 
-Projeto Node.js/Express para mock da API do SPE, com banco PostgreSQL e testes em Jest.
+Projeto Node.js/Express para a API do SPE, com banco PostgreSQL e testes em Jest.
 
 ## Requisitos
 - Node.js 18+ (recomendado)
