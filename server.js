@@ -21,7 +21,7 @@ const PORT = process.env.PORT || 3001
 // Ajusta CORS para permitir o frontend em 9000 e 9002
 app.use(
   cors({
-    origin: ['https://spe.eficaz.online'],
+    origin: ['https://spe.eficaz.online', 'http://localhost:9000'],
     credentials: false,
   }),
 )
