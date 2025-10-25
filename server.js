@@ -17,7 +17,7 @@ const partesCadastroService = require('./services/partesCadastroService')
 
 const app = express()
 //const PORT = process.env.PORT || 3001
-const PORT = 3001
+const PORT = process.env.PORT || 3001
 
 // Ajusta CORS para permitir o frontend em 9000 e 9002
 app.use(
@@ -1077,4 +1077,250 @@ app.listen(PORT, () => {
   console.log(`SPE API mock rodando em http://localhost:${PORT}`)
 })
 
-// ...
+// Fallback de favicon caso o arquivo não exista
+app.get('/favicon.ico', (req, res) => {
+  try {
+    res.set('Cache-Control', 'public, max-age=86400')
+    res.type('png')
+    const base64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMBC9T5wsgAAAAASUVORK5CYII='
+    res.send(Buffer.from(base64, 'base64'))
+  } catch (e) {
+    res.status(404).end()
+  }
+})
+app.get('/api/public/externo/processos', async (req, res) => {
+  try {
+    const cpf = String(req.query.cpf || '')
+    const chave = String(req.query.chave || '')
+    const rows = await externoService.listProcessosPorParteCredencial(cpf, chave)
+    res.json(rows)
+  } catch (err) {
+    const code =
+      Number.isInteger(Number(err.code)) && Number(err.code) >= 100 && Number(err.code) <= 599
+        ? Number(err.code)
+        : 500
+    res.status(code).json({ error: err.message || 'Erro interno' })
+  }
+})
+
+app.post('/api/public/externo/processos', async (req, res) => {
+  try {
+    const { cpf, chave, assunto, tipoId, observacoes } = req.body || {}
+    const created = await externoService.criarProcessoExterno(
+      String(cpf || ''),
+      String(chave || ''),
+      { assunto: String(assunto || ''), tipoId, observacoes: String(observacoes || '') },
+    )
+    res.status(201).json(created)
+  } catch (err) {
+    const code =
+      Number.isInteger(Number(err.code)) && Number(err.code) >= 100 && Number(err.code) <= 599
+        ? Number(err.code)
+        : 500
+    res.status(code).json({ error: err.message || 'Erro interno' })
+  }
+})
+// Documentos temporários externos (listar e anexar)
+app.get('/api/public/externo/processos/:numero/documentos', async (req, res) => {
+  try {
+    const numero = decodeURIComponent(req.params.numero || '')
+    const cpf = String(req.query.cpf || '')
+    const chave = String(req.query.chave || '')
+    const rows = await externoService.listarDocumentosExternosTemporarios(numero, cpf, chave)
+    res.json(rows)
+  } catch (err) {
+    const code =
+      Number.isInteger(Number(err.code)) && Number(err.code) >= 100 && Number(err.code) <= 599
+        ? Number(err.code)
+        : 500
+    res.status(code).json({ error: err.message || 'Erro interno' })
+  }
+})
+
+app.post('/api/public/externo/processos/:numero/documentos', async (req, res) => {
+  try {
+    const numero = decodeURIComponent(req.params.numero || '')
+    const cpf = String(req.query.cpf || '')
+    const chave = String(req.query.chave || '')
+    const { fileName, contentBase64, titulo } = req.body
+    const doc = await externoService.anexarDocumentoExternoTemporario(
+      numero,
+      cpf,
+      chave,
+      fileName,
+      contentBase64,
+      titulo,
+    )
+    res.json(doc)
+  } catch (err) {
+    const code =
+      Number.isInteger(Number(err.code)) && Number(err.code) >= 100 && Number(err.code) <= 599
+        ? Number(err.code)
+        : 500
+    res.status(code).json({ error: err.message || 'Erro interno' })
+  }
+})
+
+// Inicialização do servidor movida para o final para evitar duplicidade
+
+app.get('/api/processos/:id/tramites', async (req, res) => {
+  try {
+    const { id } = req.params
+    const rows = await processosService.listTramites(id)
+    res.json(rows)
+  } catch (e) {
+    console.error('Erro em GET /api/processos/:id/tramites', e)
+    res.status(500).json({ error: 'Erro ao listar tramites' })
+  }
+})
+
+app.post('/api/processos/:id/prioridade', async (req, res) => {
+  try {
+    const { id } = req.params
+    const { prioridade, executadoPor } = req.body
+
+    const result = await processosService.priorizar(id, { prioridade, executadoPor })
+
+    await auditLog(req, {
+      acao: 'processo.prioridade',
+      usuarioLogin: executadoPor,
+      entidade: 'processo',
+      entidadeId: id,
+      detalhes: { prioridade },
+    })
+
+    res.json({ ok: true, processo: result.processo })
+  } catch (e) {
+    console.error('Erro em POST /api/processos/:id/prioridade', e)
+    const status = e.code || 500
+    const msg = status === 500 ? 'Erro ao marcar prioridade do processo' : e.message
+    res.status(status).json({ error: msg })
+  }
+})
+
+// POST aceitar pendÃªncia
+app.post('/api/processos/:id/pendencia/aceitar', async (req, res) => {
+  try {
+    const { id } = req.params
+    const { usuario } = req.body
+
+    const result = await processosService.aceitarPendencia(id, { usuario })
+
+    await auditLog(req, {
+      acao: 'processo.pendencia_aceitar',
+      usuarioLogin: usuario,
+      entidade: 'processo',
+      entidadeId: id,
+      detalhes: result.detalhes,
+    })
+
+    res.json({ ok: true, processo: result.processo })
+  } catch (e) {
+    await rollback()
+    console.error('Erro em POST /api/processos/:id/pendencia/aceitar', e)
+    const status = e.code || 500
+    const msg = status === 500 ? 'Erro ao aceitar pendência' : e.message
+    res.status(status).json({ error: msg })
+  }
+})
+
+// POST recusar pendência
+app.post('/api/processos/:id/pendencia/recusar', async (req, res) => {
+  try {
+    const { id } = req.params
+    const { usuario, motivo } = req.body
+
+    const result = await processosService.recusarPendencia(id, { usuario, motivo })
+
+    await auditLog(req, {
+      acao: 'processo.pendencia_recusar',
+      usuarioLogin: usuario,
+      entidade: 'processo',
+      entidadeId: id,
+      detalhes: result.detalhes,
+    })
+
+    res.json({ ok: true, processo: result.processo })
+  } catch (e) {
+    await rollback()
+    console.error('Erro em POST /api/processos/:id/pendencia/recusar', e)
+    const status = e.code || 500
+    const msg = status === 500 ? 'Erro ao recusar pendência' : e.message
+    res.status(status).json({ error: msg })
+  }
+})
+
+// POST /api/processos/:id/arquivar
+app.post('/api/processos/:id/arquivar', async (req, res) => {
+  try {
+    const { id } = req.params
+    const { usuario } = req.body
+
+    const result = await processosService.arquivar(id, { usuario })
+
+    await auditLog(req, {
+      acao: 'processo.arquivar',
+      usuarioLogin: usuario,
+      entidade: 'processo',
+      entidadeId: id,
+      detalhes: result.detalhes,
+    })
+
+    res.json({ ok: true, processo: result.processo })
+  } catch (e) {
+    console.error('Erro em POST /api/processos/:id/arquivar', e)
+    const status = e.code || 500
+    const msg = status === 500 ? 'Erro ao arquivar processo' : e.message
+    res.status(status).json({ error: msg })
+  }
+})
+
+// GET /api/processos/:id/externo/documentos/:tempId (visualizar)
+app.get('/api/processos/:id/externo/documentos/:tempId', async (req, res) => {
+  try {
+    const { id, tempId } = req.params
+    const doc = await externoService.getDocumentoTemporario(id, tempId)
+    res.json(doc)
+  } catch (e) {
+    console.error('Erro em GET /api/processos/:id/externo/documentos/:tempId', e)
+    const code = e.code || e.status || 500
+    const msg = code === 500 ? 'Erro ao obter documento externo temporário' : e.message
+    res.status(code).json({ error: msg })
+  }
+})
+
+// POST /api/processos/:id/externo/documentos/:tempId/aceitar
+app.post('/api/processos/:id/externo/documentos/:tempId/aceitar', async (req, res) => {
+  try {
+    const { id, tempId } = req.params
+    const result = await externoService.aceitarDocumentoTemporario(id, tempId)
+    res.json(result)
+  } catch (e) {
+    console.error('Erro em POST /api/processos/:id/externo/documentos/:tempId/aceitar', e)
+    const code = e.code || e.status || 500
+    const msg = code === 500 ? 'Erro ao aceitar documento externo' : e.message
+    res.status(code).json({ error: msg })
+  }
+})
+
+// POST /api/processos/:id/externo/documentos/:tempId/rejeitar
+app.post('/api/processos/:id/externo/documentos/:tempId/rejeitar', async (req, res) => {
+  try {
+    const { id, tempId } = req.params
+    const { motivo } = req.body || {}
+    const result = await externoService.rejeitarDocumentoTemporario(id, tempId, motivo)
+    res.json(result)
+  } catch (e) {
+    console.error('Erro em POST /api/processos/:id/externo/documentos/:tempId/rejeitar', e)
+    const code = e.code || e.status || 500
+    const msg = code === 500 ? 'Erro ao rejeitar documento externo' : e.message
+    res.status(code).json({ error: msg })
+  }
+})
+
+// Saúde
+app.get('/health', (_, res) => res.json({ status: 'ok' }))
+
+app.listen(PORT, () => {
+  console.log(`SPE API mock rodando em http://localhost:${PORT}`)
+})
