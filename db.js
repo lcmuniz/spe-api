@@ -11,7 +11,7 @@ const pool = connectionString
       host: process.env.PGHOST || 'localhost',
       port: parseInt(process.env.PGPORT || '5432', 10),
       user: process.env.PGUSER || 'postgres',
-      password: process.env.PGPASSWORD || 'password',
+      password: process.env.PGPASSWORD || 'postgres',
       database: process.env.PGDATABASE || 'spe',
     })
 
@@ -38,6 +38,9 @@ async function initDb() {
       entidade VARCHAR(100),
       entidade_id VARCHAR(100),
       detalhes JSONB,
+      ip VARCHAR(15),
+      user_agent TEXT, 
+      rota VARCHAR(255),
       setor VARCHAR(100)
     );
   `)

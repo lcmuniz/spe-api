@@ -20,7 +20,7 @@ Ou usando variáveis PG*:
 PGHOST=localhost
 PGPORT=5432
 PGUSER=postgres
-PGPASSWORD=password
+PGPASSWORD=postgres
 PGDATABASE=spe
 PGSCHEMA=spe
 ```
