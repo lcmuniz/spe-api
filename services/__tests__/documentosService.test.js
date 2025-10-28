@@ -138,7 +138,7 @@ describe('documentosService', () => {
       expect(query).toHaveBeenCalledTimes(2)
       const insertArgs = query.mock.calls[0]
       expect(insertArgs[0]).toEqual(expect.stringContaining('INSERT INTO documentos'))
-      expect(insertArgs[1]).toEqual(['doc-123', 'Doc', 'Documento', 'Editor', 'rascunho', 'user1'])
+      expect(insertArgs[1]).toEqual(['doc-123', 'Doc', null, 'Editor', 'rascunho', 'user1'])
       expect(result).toEqual(fakeRow)
     })
   })

@@ -21,7 +21,7 @@ describe('processosService', () => {
       query.mockResolvedValueOnce({ rows: [] })
       const result = await processosService.getProcessoById('proc-404')
       expect(query).toHaveBeenCalledTimes(1)
-      expect(query).toHaveBeenCalledWith(expect.stringContaining('FROM processos WHERE id = $1'), [
+      expect(query).toHaveBeenCalledWith(expect.stringContaining('WHERE p.id = $1'), [
         'proc-404',
       ])
       expect(result).toBeNull()
@@ -52,7 +52,7 @@ describe('processosService', () => {
       const result = await processosService.getProcessoById('proc-1')
 
       expect(query).toHaveBeenCalledTimes(2)
-      expect(query.mock.calls[0][0]).toEqual(expect.stringContaining('SELECT id, numero, assunto'))
+      expect(query.mock.calls[0][0]).toEqual(expect.stringContaining('SELECT p.id'))
       expect(query.mock.calls[1][0]).toEqual(expect.stringContaining('FROM processo_partes'))
       expect(result).toEqual({ ...procRow, partes: partesRows })
     })
@@ -121,11 +121,16 @@ describe('processosService', () => {
     expect(insertProcParams[0]).toBe('proc-123')
     expect(insertProcParams[1]).toEqual(expect.stringMatching(/^\d{8}-\d{6}-\d{3}$/))
     expect(insertProcParams[2]).toBe('Assunto X')
-    expect(insertProcParams[3]).toBe('Processo')
-    expect(insertProcParams[4]).toBe('Público')
-    expect(insertProcParams[5]).toBeNull()
-    expect(insertProcParams[6]).toBe('')
-    expect(insertProcParams[7]).toBe('user1')
+    // nivel_acesso default
+    expect(insertProcParams[3]).toBe('Público')
+    // base_legal default
+    expect(insertProcParams[4]).toBeNull()
+    // observacoes default
+    expect(insertProcParams[5]).toBe('')
+    // atribuido_usuario
+    expect(insertProcParams[6]).toBe('user1')
+    // tipo_id default
+    expect(insertProcParams[7]).toBeNull()
 
     // Inserts de cadastro_partes + processo_partes
     expect(query.mock.calls[2][0]).toEqual(expect.stringContaining('INSERT INTO cadastro_partes'))
@@ -227,22 +232,26 @@ describe('processosService', () => {
       query.mockResolvedValueOnce({ rows: [] })
       await expect(
         processosService.updateDados('proc-404', { assunto: 'Novo' }),
-      ).rejects.toMatchObject({ code: 404 })
+      ).rejects.toMatchObject({ status: 404 })
       expect(query).toHaveBeenCalledTimes(1)
     })
 
     it('valida base legal quando nivelAcesso diferente de Público', async () => {
       // SELECT atual
       query.mockResolvedValueOnce({ rows: [{ nivel_acesso: 'Público', base_legal: null }] })
+      // SELECT partes (getProcessoById chama listarPartesDoProcesso quando encontra o processo)
+      query.mockResolvedValueOnce({ rows: [] })
       await expect(
         processosService.updateDados('proc-1', { nivelAcesso: 'Restrito' }),
-      ).rejects.toMatchObject({ code: 400 })
-      expect(query).toHaveBeenCalledTimes(1)
+      ).rejects.toMatchObject({ status: 400 })
+      expect(query).toHaveBeenCalledTimes(2)
     })
 
     it('atualiza dados e retorna o processo atualizado', async () => {
       // SELECT atual
       query.mockResolvedValueOnce({ rows: [{ nivel_acesso: 'Público', base_legal: null }] })
+      // SELECT partes
+      query.mockResolvedValueOnce({ rows: [] })
       // UPDATE
       query.mockResolvedValueOnce({})
       // SELECT retorno
@@ -271,9 +280,9 @@ describe('processosService', () => {
         baseLegal: null,
       })
 
-      expect(query).toHaveBeenCalledTimes(3)
-      expect(query.mock.calls[1][0]).toEqual(expect.stringContaining('UPDATE processos'))
-      expect(query.mock.calls[2][0]).toEqual(expect.stringContaining('SELECT id, numero, assunto'))
+      expect(query).toHaveBeenCalledTimes(4)
+      expect(query.mock.calls[2][0]).toEqual(expect.stringContaining('UPDATE processos'))
+      expect(query.mock.calls[3][0]).toEqual(expect.stringContaining('SELECT p.id'))
       expect(result).toEqual(updatedRow)
     })
   })
