@@ -20,7 +20,8 @@ async function listByProcesso(processoId, viewerSetorRaw) {
   const { rows } = await query(
     `SELECT d.id,
             d.titulo,
-            d.tipo,
+            d.tipo_id AS "tipoId",
+            td.nome AS "tipoNome",
             d.modo,
             d.status,
             d.file_name AS "fileName",
@@ -32,6 +33,7 @@ async function listByProcesso(processoId, viewerSetorRaw) {
             a.setor AS "assinanteSetor"
        FROM processo_documentos pd
        JOIN documentos d ON d.id = pd.documento_id
+       LEFT JOIN tipos_documento td ON td.id = d.tipo_id
        LEFT JOIN usuarios u ON u.login = d.autor
        LEFT JOIN cadastro_partes ca ON ca.id::text = d.autor
        LEFT JOIN usuarios a ON a.login = d.assinado_por
@@ -68,7 +70,7 @@ async function linkDocumento(processoId, documentoId) {
   return { ok: true }
 }
 
-async function createDocumento({ titulo, tipo, modo, autor, autorLogin }) {
+async function createDocumento({ titulo, tipoId, modo, autor, autorLogin }) {
   if (!titulo) {
     const err = new Error('Título é obrigatório')
     err.code = 400
@@ -76,12 +78,21 @@ async function createDocumento({ titulo, tipo, modo, autor, autorLogin }) {
   }
   const id = uuidv4()
   await query(
-    `INSERT INTO documentos (id, titulo, tipo, modo, status, autor) VALUES ($1, $2, $3, $4, $5, $6)`,
-    [id, titulo, tipo || 'Documento', modo || 'Editor', 'rascunho', autor || autorLogin || null],
+    `INSERT INTO documentos (id, titulo, tipo_id, modo, status, autor) VALUES ($1, $2, $3, $4, $5, $6)`,
+    [id, titulo, tipoId || null, modo || 'Editor', 'rascunho', autor || autorLogin || null],
   )
   const { rows } = await query(
-    `SELECT d.id, d.titulo, d.tipo, d.modo, d.status, d.criado_em AS "criadoEm", d.autor AS "autor", COALESCE(u.nome, ca.nome) AS "autorNome"
+    `SELECT d.id,
+            d.titulo,
+            d.tipo_id AS "tipoId",
+            td.nome AS "tipoNome",
+            d.modo,
+            d.status,
+            d.criado_em AS "criadoEm",
+            d.autor AS "autor",
+            COALESCE(u.nome, ca.nome) AS "autorNome"
        FROM documentos d
+       LEFT JOIN tipos_documento td ON td.id = d.tipo_id
        LEFT JOIN usuarios u ON u.login = d.autor
        LEFT JOIN cadastro_partes ca ON ca.id::text = d.autor
       WHERE d.id = $1`,
@@ -248,11 +259,59 @@ async function editorConteudo(id, { conteudo, usuarioLogin, autorLogin, autor })
   return { ok: true, statusAnterior: statusAtual, assinante }
 }
 
+async function editarDados(id, { titulo, tipoId, usuarioLogin }) {
+  const { rows: drows } = await query(
+    `SELECT status, assinado_por FROM documentos WHERE id = $1`,
+    [id],
+  )
+  if (drows.length === 0) {
+    const err = new Error('Documento não encontrado')
+    err.code = 404
+    throw err
+  }
+  if (!usuarioLogin) {
+    const err = new Error('Usuário executor é obrigatório para editar dados')
+    err.code = 400
+    throw err
+  }
+  const statusAtual = String(drows[0].status || '').toLowerCase()
+  const assinante = drows[0].assinado_por || null
+
+  if (statusAtual === 'rascunho') {
+    await _validarPosicaoFimArvore({ documentoId: id, usuarioLogin, exigeAtribuicao: false })
+  } else if (statusAtual === 'assinado') {
+    await _validarPosicaoFimArvore({ documentoId: id, usuarioLogin, exigeAtribuicao: true })
+  }
+
+  const sql =
+    statusAtual === 'assinado'
+      ? `UPDATE documentos
+            SET titulo = COALESCE($2, titulo),
+                tipo_id = $3,
+                status = 'rascunho',
+                assinado_por = NULL,
+                assinado_em = NULL
+          WHERE id = $1`
+      : `UPDATE documentos
+            SET titulo = COALESCE($2, titulo),
+                tipo_id = $3
+          WHERE id = $1`
+
+  const { rowCount } = await query(sql, [id, titulo || null, tipoId || null])
+  if (rowCount === 0) {
+    const err = new Error('Documento não encontrado')
+    err.code = 404
+    throw err
+  }
+  return { ok: true, statusAnterior: statusAtual, assinante }
+}
+
 async function getDocumentoById(id) {
   const { rows } = await query(
     `SELECT d.id,
             d.titulo,
-            d.tipo,
+            d.tipo_id AS "tipoId",
+            td.nome AS "tipoNome",
             d.modo,
             d.status,
             d.file_name AS "fileName",
@@ -266,6 +325,7 @@ async function getDocumentoById(id) {
             COALESCE(a.nome, cs.nome) AS "assinaturaNome",
             a.cargo AS "assinaturaCargo"
        FROM documentos d
+       LEFT JOIN tipos_documento td ON td.id = d.tipo_id
        LEFT JOIN usuarios u ON u.login = d.autor
        LEFT JOIN cadastro_partes ca ON ca.id::text = d.autor
        LEFT JOIN usuarios a ON a.login = d.assinado_por
@@ -540,7 +600,7 @@ async function seedByProcesso(processoId, { autor, autorLogin } = {}) {
   // Cria documento inicial (rascunho, modo Editor)
   const created = await createDocumento({
     titulo: 'Documento inicial',
-    tipo: 'Documento',
+    tipoId: 'TD-0003',
     modo: 'Editor',
     autor: autorResolved || null,
   })
@@ -560,6 +620,7 @@ module.exports = {
   createDocumento,
   uploadConteudo,
   editorConteudo,
+  editarDados,
   getDocumentoById,
   assinar,
   deletarRascunho,

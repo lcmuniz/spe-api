@@ -17,4 +17,9 @@ async function listTiposProcesso() {
   return rows
 }
 
-module.exports = { listSetores, listAssuntos, listTiposProcesso }
+async function listTiposDocumento() {
+  const { rows } = await query(`SELECT id, nome FROM tipos_documento ORDER BY id`)
+  return rows
+}
+
+module.exports = { listSetores, listAssuntos, listTiposProcesso, listTiposDocumento }

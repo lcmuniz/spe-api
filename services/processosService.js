@@ -686,7 +686,8 @@ async function consultarPublico(valorRaw, cpf, chave) {
   const { rows: docsRows } = await query(
     `SELECT d.id,
             d.titulo,
-            d.tipo,
+            d.tipo_id AS "tipoId",
+            td.nome AS "tipoNome",
             d.modo,
             d.status,
             d.file_name AS "fileName",
@@ -697,6 +698,7 @@ async function consultarPublico(valorRaw, cpf, chave) {
             a.setor AS "assinanteSetor"
        FROM processo_documentos pd
        JOIN documentos d ON d.id = pd.documento_id
+       LEFT JOIN tipos_documento td ON td.id = d.tipo_id
        LEFT JOIN usuarios a ON a.login = d.assinado_por
       WHERE pd.processo_id = $1 AND LOWER(d.status) = 'assinado'
       ORDER BY d.criado_em ASC`,

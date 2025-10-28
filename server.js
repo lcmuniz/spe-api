@@ -11,6 +11,7 @@ const { auditLog } = require('./services/auditoriaService')
 const acessosService = require('./services/acessosService')
 const catalogService = require('./services/catalogService')
 const documentosService = require('./services/documentosService')
+const modelosService = require('./services/documentosModelosService')
 const usuariosService = require('./services/usuariosService')
 const { rollback } = require('./services/transacoesService')
 const partesCadastroService = require('./services/partesCadastroService')
@@ -165,6 +166,17 @@ app.get('/api/catalog/tipos-processo', async (req, res) => {
   } catch (e) {
     console.error('Erro em GET /api/catalog/tipos-processo', e)
     res.status(500).json({ error: 'Erro ao listar tipos de processo' })
+  }
+})
+
+// GET /api/catalog/tipos-documento
+app.get('/api/catalog/tipos-documento', async (req, res) => {
+  try {
+    const tipos = await catalogService.listTiposDocumento()
+    res.json(tipos)
+  } catch (e) {
+    console.error('Erro em GET /api/catalog/tipos-documento', e)
+    res.status(500).json({ error: 'Erro ao listar tipos de documento' })
   }
 })
 
@@ -642,15 +654,15 @@ app.post('/api/processos/:id/documentos/link', async (req, res) => {
 // POST /api/documentos
 app.post('/api/documentos', async (req, res) => {
   try {
-    const { titulo, tipo, modo, autorLogin } = req.body
-    const created = await documentosService.createDocumento({ titulo, tipo, modo, autorLogin })
+    const { titulo, tipoId, modo, autorLogin } = req.body
+    const created = await documentosService.createDocumento({ titulo, tipoId, modo, autorLogin })
 
     await auditLog(req, {
       acao: 'documento.criar',
       usuarioLogin: autorLogin || null,
       entidade: 'documento',
       entidadeId: created.id,
-      detalhes: { titulo, tipo: tipo || 'Documento', modo: modo || 'Editor' },
+      detalhes: { titulo, tipoId: tipoId || null, modo: modo || 'Editor' },
     })
 
     res.status(201).json(created)
@@ -721,6 +733,62 @@ app.post('/api/documentos/:id/editor/conteudo', async (req, res) => {
     console.error('Erro em POST /api/documentos/:id/editor/conteudo', e)
     const status = e.code || 500
     res.status(status).json({ error: e.message || 'Erro ao atualizar documento (editor)' })
+  }
+})
+
+// POST /api/documentos/:id/dados (atualiza título e tipo)
+app.post('/api/documentos/:id/dados', async (req, res) => {
+  try {
+    const { id } = req.params
+    const { titulo, tipoId } = req.body
+    const usuarioLogin = req.body.usuarioLogin || null
+
+    const result = await documentosService.editarDados(id, {
+      titulo,
+      tipoId,
+      usuarioLogin,
+    })
+
+    await auditLog(req, {
+      acao: 'documento.editar_dados',
+      usuarioLogin: usuarioLogin || null,
+      entidade: 'documento',
+      entidadeId: id,
+      detalhes: { statusAnterior: result.statusAnterior, assinante: result.assinante },
+    })
+
+    res.json({ ok: true })
+  } catch (e) {
+    console.error('Erro em POST /api/documentos/:id/dados', e)
+    const status = e.code || 500
+    res.status(status).json({ error: e.message || 'Erro ao atualizar dados do documento' })
+  }
+})
+
+// GET /api/documentos/modelos (lista modelos, opcional filtro por tipo)
+app.get('/api/documentos/modelos', async (req, res) => {
+  try {
+    const tipoId = req.query.tipoId || undefined
+    const rows = await modelosService.listModelos({ tipoId })
+    res.json(rows)
+  } catch (e) {
+    console.error('Erro em GET /api/documentos/modelos', e)
+    const status = e.code || 500
+    res.status(status).json({ error: e.message || 'Erro ao listar modelos de documento' })
+  }
+})
+
+// GET /api/documentos/modelos/:id (detalhe do modelo)
+app.get('/api/documentos/modelos/:id', async (req, res) => {
+  try {
+    const { id } = req.params
+    const modelo = await modelosService.getModeloById(id)
+    if (!modelo) return res.status(404).json({ error: 'Modelo não encontrado' })
+    res.json(modelo)
+  } catch (e) {
+    console.error('Erro em GET /api/documentos/modelos/:id', e)
+    const status = e.code || 500
+    res.status(status).json({ error: e.message || 'Erro ao carregar modelo de documento' })
   }
 })
 
